@@ -33,6 +33,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
         self.current_request_response = None
         self.worker_threads = []
         self.worker_threads_lock = threading.Lock()
+        self._refreshing_targets = False
         self.default_max_results = 5000
         self.createGUI()
         callbacks.addSuiteTab(self)
@@ -502,33 +503,58 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         self.role_combo.setSelectedItem(role_name)
 
     def refreshTargets(self):
+        if getattr(self, "_refreshing_targets", False):
+            return 
+        self._refreshing_targets = True
+        self.refresh_targets_button.setEnabled(False)
+        self._startTrackedThread(self._refreshTargetsBackground)
+
+    def _refreshTargetsBackground(self):
+        from javax.swing import SwingUtilities
+        sorted_targets = None
+        empty_map = False
+        error = None
         try:
             target_map = self.callbacks.getSiteMap(None)
             if not target_map:
-                self.addStatus("No target history found")
-                return
-            self.target_combo.removeAllItems()
-            targets = set()
-            for item in target_map:
-                try:
-                    service = item.getHttpService()
-                    port_str = ""
-                    if service.getPort() != 80 and service.getPort() != 443:
-                        port_str = ":%d" % service.getPort()
-                    target = "%s://%s%s" % (service.getProtocol(), service.getHost(), port_str)
-                    targets.add(target)
-                except:
-                    continue
-            sorted_targets = sorted(list(targets))
-            for target in sorted_targets:
-                self.target_combo.addItem(target)
-            if sorted_targets:
+                empty_map = True
+                sorted_targets = []
+            else:
+                targets = set()
+                for item in target_map:
+                    try:
+                        service = item.getHttpService()
+                        port_str = ""
+                        if service.getPort() != 80 and service.getPort() != 443:
+                            port_str = ":%d" % service.getPort()
+                        target = "%s://%s%s" % (service.getProtocol(), service.getHost(), port_str)
+                        targets.add(target)
+                    except:
+                        continue
+                sorted_targets = sorted(list(targets))
+        except Exception as e:
+            error = str(e)
+
+        def _apply():
+            try:
+                if error is not None:
+                    self.addStatus("Error refreshing targets: %s" % error)
+                    return
+                if empty_map:
+                    self.addStatus("No target history found")
+                    return
+                if not sorted_targets:
+                    self.addStatus("No valid targets found in history")
+                    return
+                self.target_combo.removeAllItems()
+                for target in sorted_targets:
+                    self.target_combo.addItem(target)
                 self.target_combo.insertItemAt("All Targets", 0)
                 self.target_combo.setSelectedIndex(0)
-            else:
-                self.addStatus("No valid targets found in history")
-        except Exception as e:
-            self.addStatus("Error refreshing targets: %s" % str(e))
+            finally:
+                self.refresh_targets_button.setEnabled(True)
+                self._refreshing_targets = False
+        SwingUtilities.invokeLater(_apply)
 
     def updateScopeFromTarget(self):
         try:
