@@ -1,6 +1,6 @@
-# Permiter  
+# Permitter  
 
-Permiter is a Burp Suite Extension that automatically tests for Authorization issues using either your proxy history or site map. Multiple roles can be configured and use regex to swap out the session identifier(s) used by the application. Multiple regex patterns can be set for each role. Unauthenticated tests can be configured but are disabled by default.  
+Permitter is a Burp Suite Extension that automatically tests for Authorization issues using either your proxy history or site map. Multiple roles can be configured and use regex to swap out the session identifier(s) used by the application. Multiple regex patterns can be set for each role. Unauthenticated tests can be configured but are disabled by default.  
 
 Results can be exported in CSV or HTML format. Exporting as HTML embeds each request/response page for easy review.  
 
@@ -8,7 +8,7 @@ Results can be exported in CSV or HTML format. Exporting as HTML embeds each req
 
 Burp Suite needs the Python environment configured. Add the reference to the Jython JAR file in extension settings.  
 
-From the Extensions setting, in the Installed tab, select `add` and choose Python as the extension type. Then load `permiter.py`. That is all there is. 
+From the Extensions setting, in the Installed tab, select `add` and choose Python as the extension type. Then load `permitter.py`. That is all there is. 
 
 ## HOW TO USE:  
 
@@ -16,13 +16,13 @@ The OWASP JuiceShop at `https://juice-shop.herokuapp.com` was used to demonstrat
 
 ### Configuration  
 
-To use Permiter, you will need to set the target scope and define each role to be tested.  
+To use Permitter, you will need to set the target scope and define each role to be tested.  
 
-![Permiter](/images/main.png)  
+![Permitter](/images/main.png)  
 
 #### Scope  
 
-Permiter can pull from the target history or regex can be used to define the scope.  
+Permitter can pull from the target history or regex can be used to define the scope.  
 
 ![Scope](/images/scope.png)  
 
@@ -50,7 +50,7 @@ To start testing, select either `Use Proxy History` or `Use Site Map`.
 
 Additionally, the option to save and load a previous configuration is available. Select `Include Unauth` for checks for unauthenticated access. By default, duplicate endpoints are excluded. Check `Use Entire History` to disable and use the entire history. This may be needed to fully test some applications.  
 
-The results will populate in Permiter.  
+The results will populate in Permitter.  
 
 ![Results](/images/status.png)  
 
