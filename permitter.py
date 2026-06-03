@@ -33,6 +33,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
         self.current_request_response = None
         self.worker_threads = []
         self.worker_threads_lock = threading.Lock()
+        self.default_max_results = 5000
         self.createGUI()
         callbacks.addSuiteTab(self)
         print("Permitter")
@@ -118,6 +119,67 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
     def _copyRolesMap(self, roles):
         return dict((name, self._copyRoleData(data)) for name, data in roles.items())
 
+    def _makeStoredRequestResponse(self, service, sent_request, response):
+        saver = getattr(self.callbacks, "saveBuffersToTempFiles", None)
+        if response is not None and saver is not None:
+            try:
+                return ("persisted", saver(response))
+            except Exception:
+                pass
+        resp_bytes = None
+        try:
+            resp_bytes = response.getResponse() if response is not None else None
+        except Exception:
+            resp_bytes = None
+        return ("raw", {"request": sent_request, "response": resp_bytes, "service": service})
+
+    def _resultRequest(self, result):
+        store = result.get("reqresp")
+        if store is None:
+            return result.get("request")
+        kind, payload = store
+        if kind == "persisted":
+            try:
+                return payload.getRequest()
+            except Exception:
+                return None
+        return payload.get("request")
+
+    def _resultResponse(self, result):
+        store = result.get("reqresp")
+        if store is None:
+            return result.get("response")
+        kind, payload = store
+        if kind == "persisted":
+            try:
+                return payload.getResponse()
+            except Exception:
+                return None
+        return payload.get("response")
+
+    def _resultService(self, result):
+        store = result.get("reqresp")
+        if store is None:
+            return result.get("service")
+        kind, payload = store
+        if kind == "persisted":
+            try:
+                return payload.getHttpService()
+            except Exception:
+                return None
+        return payload.get("service")
+
+    def _enforceResultCap(self):
+        try:
+            cap = int(self.max_results_spinner.getValue())
+        except Exception:
+            cap = self.default_max_results
+        if cap <= 0:
+            return  
+        overflow = len(self.test_results) - cap
+        if overflow > 0:
+            del self.test_results[:overflow]
+
     def createGUI(self):
         self.panel = JPanel(BorderLayout())
         main_split = JSplitPane(JSplitPane.VERTICAL_SPLIT)
@@ -164,6 +226,12 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         left_gbc.gridx = 1; left_gbc.fill = GridBagConstraints.NONE; left_gbc.weightx = 0
         self.delay_spinner = JSpinner(SpinnerNumberModel(10, 0, 1000, 5))
         left_config.add(self.delay_spinner, left_gbc)
+        left_gbc.gridx = 2; left_gbc.fill = GridBagConstraints.NONE; left_gbc.weightx = 0
+        left_config.add(JLabel("Max Results (0=unlimited):"), left_gbc)
+        left_gbc.gridx = 3; left_gbc.fill = GridBagConstraints.NONE; left_gbc.weightx = 0
+        self.max_results_spinner = JSpinner(SpinnerNumberModel(self.default_max_results, 0, 1000000, 500))
+        self.max_results_spinner.setToolTipText("Cap on retained results; oldest are evicted past this. 0 disables the cap.")
+        left_config.add(self.max_results_spinner, left_gbc)
         left_gbc.gridx = 0; left_gbc.gridy = 5; left_gbc.gridwidth = 2; left_gbc.fill = GridBagConstraints.HORIZONTAL
         testing_panel = JPanel(GridBagLayout())
         testing_gbc = GridBagConstraints()
@@ -572,6 +640,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                     "scope_pattern": self.scope_field.getText(),
                     "exclude_endpoints": self.exclude_field.getText(),
                     "request_delay": self.delay_spinner.getValue(),
+                    "max_results": self.max_results_spinner.getValue(),
                     "include_unauth": self.test_unauth_checkbox.isSelected(),
                     "roles": roles_snapshot,
                     "skip_js": self.skip_js_checkbox.isSelected(),
@@ -616,6 +685,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                                 self.exclude_field.setText(state_data["exclude_endpoints"])
                             if "request_delay" in state_data:
                                 self.delay_spinner.setValue(state_data["request_delay"])
+                            if "max_results" in state_data:
+                                self.max_results_spinner.setValue(state_data["max_results"])
                             if "include_unauth" in state_data:
                                 self.test_unauth_checkbox.setSelected(state_data["include_unauth"])
                             if "skip_js" in state_data:
@@ -839,15 +910,17 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                 request_content = ""
                 response_content = ""
                 try:
-                    if "request" in result:
-                        request_str = self.helpers.bytesToString(result["request"])
+                    req_bytes = self._resultRequest(result)
+                    if req_bytes is not None:
+                        request_str = self.helpers.bytesToString(req_bytes)
                         request_content = ''.join(c if ord(c) < 128 else '?' for c in request_str)
                         request_content = request_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 except:
                     request_content = "Error displaying request"
                 try:
-                    if "response" in result:
-                        response_str = self.helpers.bytesToString(result["response"])
+                    resp_bytes = self._resultResponse(result)
+                    if resp_bytes is not None:
+                        response_str = self.helpers.bytesToString(resp_bytes)
                         response_content = ''.join(c if ord(c) < 128 else '?' for c in response_str)
                         response_content = response_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 except:
@@ -1061,6 +1134,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                         status_code = response_info.getStatusCode()
                         response_length = len(response.getResponse()) 
                         notes = self._analyzeResponse(status_code, original_request_response, response)
+                        stored = self._makeStoredRequestResponse(service, modified_request, response)
                         with self.test_lock:
                             result = {
                                 "role": role_name,
@@ -1069,13 +1143,13 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                                 "status": str(status_code),
                                 "response_length": str(response_length),
                                 "notes": notes,
-                                "request": modified_request,
-                                "response": response.getResponse(),
-                                "service": service
+                                "reqresp": stored
                             }
                             self.test_results.append(result)
+                            self._enforceResultCap()
                             self._updateResultsTable()
                     else:
+                        stored = self._makeStoredRequestResponse(service, modified_request, None)
                         with self.test_lock:
                             result = {
                                 "role": role_name,
@@ -1084,16 +1158,16 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                                 "status": "NO_RESPONSE",
                                 "response_length": "0",
                                 "notes": "Request failed - no response received",
-                                "request": modified_request,
-                                "response": None,
-                                "service": service
+                                "reqresp": stored
                             }
                             self.test_results.append(result)
+                            self._enforceResultCap()
                             self._updateResultsTable()
                     delay_ms = self.delay_spinner.getValue()
                     if delay_ms > 0:
                         time.sleep(delay_ms / 1000.0)
                 except Exception as e:
+                    stored = self._makeStoredRequestResponse(service, modified_request, None)
                     with self.test_lock:
                         result = {
                             "role": role_name,
@@ -1102,11 +1176,10 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                             "status": "ERROR",
                             "response_length": "0",
                             "notes": "Request error: %s" % str(e),
-                            "request": modified_request,
-                            "response": None,
-                            "service": service
+                            "reqresp": stored
                         }
                         self.test_results.append(result)
+                        self._enforceResultCap()
                         self._updateResultsTable()
                     self.addStatus("Error testing %s with %s: %s" % (url, role_name, str(e)))
         except Exception as e:
@@ -1126,6 +1199,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                         status_code = response_info.getStatusCode()
                         response_length = len(response.getResponse())
                         notes = self._analyzeResponse(status_code, original_request_response, response)
+                        stored = self._makeStoredRequestResponse(service, unauthenticated_request, response)
                         with self.test_lock:
                             result = {
                                 "role": "UNAUTHENTICATED",
@@ -1134,13 +1208,13 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                                 "status": str(status_code),
                                 "response_length": str(response_length),
                                 "notes": notes,
-                                "request": unauthenticated_request,
-                                "response": response.getResponse(),
-                                "service": service
+                                "reqresp": stored
                             }
                             self.test_results.append(result)
+                            self._enforceResultCap()
                             self._updateResultsTable()
                     else:
+                        stored = self._makeStoredRequestResponse(service, unauthenticated_request, None)
                         with self.test_lock:
                             result = {
                                 "role": "UNAUTHENTICATED",
@@ -1149,16 +1223,16 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                                 "status": "NO_RESPONSE",
                                 "response_length": "0",
                                 "notes": "Request failed - no response received",
-                                "request": unauthenticated_request,
-                                "response": None,
-                                "service": service
+                                "reqresp": stored
                             }
                             self.test_results.append(result)
+                            self._enforceResultCap()
                             self._updateResultsTable()
                     delay_ms = self.delay_spinner.getValue()
                     if delay_ms > 0:
                         time.sleep(delay_ms / 1000.0)
                 except Exception as e:
+                    stored = self._makeStoredRequestResponse(service, unauthenticated_request, None)
                     with self.test_lock:
                         result = {
                             "role": "UNAUTHENTICATED", 
@@ -1167,11 +1241,10 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                             "status": "ERROR",
                             "response_length": "0",
                             "notes": "Request error: %s" % str(e),
-                            "request": unauthenticated_request,
-                            "response": None,
-                            "service": service
+                            "reqresp": stored
                         }
                         self.test_results.append(result)
+                        self._enforceResultCap()
                         self._updateResultsTable()
                     self.addStatus("Error testing %s unauthenticated: %s" % (url, str(e)))
         except Exception as e:
@@ -1273,14 +1346,17 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         try:
             if self.current_testing_thread and self.current_testing_thread.isAlive():
                 return
-            if result and "request" in result and "response" in result:
+            if result and ("reqresp" in result or "request" in result):
+                req_bytes = self._resultRequest(result)
+                resp_bytes = self._resultResponse(result)
+                service = self._resultService(result)
                 self.current_request_response = TestRequestResponse(
-                    result["request"], 
-                    result["response"], 
-                    result["service"]
+                    req_bytes,
+                    resp_bytes,
+                    service
                 )
-                self.request_editor.setMessage(result["request"], True)
-                self.response_editor.setMessage(result["response"], False)
+                self.request_editor.setMessage(req_bytes, True)
+                self.response_editor.setMessage(resp_bytes, False)
             else:
                 self.request_editor.setMessage(None, True)
                 self.response_editor.setMessage(None, False)
