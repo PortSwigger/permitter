@@ -1,0 +1,24 @@
+<p>Permitter is an extension that automatically tests for authorization issues by replaying requests from proxy history or the site map across multiple configured roles, using regex-based session token substitution to detect improper access controls.</p>
+
+<h2>Features</h2>
+<ul>
+  <li>Tests authorization across multiple roles, each defined with a name and one or more regex patterns that swap session identifiers in requests</li>
+  <li>Pulls test targets from proxy history or the site map, with scope definable by target selection or regex</li>
+  <li>Optional unauthenticated access testing, disabled by default, to check endpoints without any session token</li>
+  <li>Endpoint exclusion list and configurable per-request delay to control test behavior</li>
+  <li>Deduplication of endpoints by default, with an option to use the full history when complete coverage is needed</li>
+  <li>Exports results as CSV or as HTML with embedded request and response data for detailed review</li>
+  <li>Save and load configuration to reuse role and scope settings across testing sessions</li>
+</ul>
+
+<h2>Usage</h2>
+<ol>
+  <li>Open the Permitter tab and navigate to the Scope section.</li>
+  <li>To use proxy history targets, select <code class=InlineCode>Refresh Targets</code> and choose a target from the list. Alternatively, define scope using a regex pattern.</li>
+  <li>Add any endpoints to exclude from testing, and set the request delay if needed (default is 10 milliseconds).</li>
+  <li>Navigate to the Roles section and add each role by entering a name and a regex pattern that matches and replaces the session identifier for that role, then select <code class=InlineCode>Save</code>.</li>
+  <li>Repeat for each additional role. Roles appear in the <code class=InlineCode>Roles:</code> selector and can be modified after being added.</li>
+  <li>Optionally check <code class=InlineCode>Include Unauth</code> to also test endpoints without any session token, and check <code class=InlineCode>Use Entire History</code> to disable deduplication.</li>
+  <li>Select either <code class=InlineCode>Use Proxy History</code> or <code class=InlineCode>Use Site Map</code> to begin testing. Results populate in the Permitter results panel.</li>
+  <li>Export results using the CSV or HTML option. For HTML exports, select <code class=InlineCode>Show Request/Response</code> on any result to review the full request and response detail.</li>
+</ol>

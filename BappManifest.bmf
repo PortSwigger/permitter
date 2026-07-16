@@ -1,0 +1,13 @@
+Uuid: 16c6952955d24498856b307eb4fb05ad
+ExtensionType: 2
+Name: Permitter
+RepoName: permitter
+ScreenVersion: 1.0.0
+SerialVersion: 1
+MinPlatformVersion: 2
+ProOnly: False
+Author: roidrage52
+ShortDescription: Tests for authorization issues across multiple roles using proxy history or site map.
+EntryPoint: permitter.py
+BuildCommand: 
+SupportedProducts: Pro, Community
