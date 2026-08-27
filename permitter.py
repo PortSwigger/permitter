@@ -1056,6 +1056,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
 
     def _testProxyHistoryBackground(self):
         try:
+            self.addStatus("Starting proxy history testing...")
             proxy_history = self.callbacks.getProxyHistory()
             scope_pattern = self.scope_field.getText().strip()
             tested_count = 0
@@ -1068,10 +1069,13 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         except Exception as e:
             self._logError("Error in proxy history testing: %s" % str(e))
         finally:
+            self.current_testing_thread = None
+            self.addStatus("Proxy history testing completed")
             self.stopTesting()
 
     def _testSiteMapBackground(self):
         try:
+            self.addStatus("Starting site map testing...")
             site_map = self.callbacks.getSiteMap(None)
             scope_pattern = self.scope_field.getText().strip()
             tested_count = 0
@@ -1084,6 +1088,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         except Exception as e:
             self._logError("Error in site map testing: %s" % str(e))
         finally:
+            self.current_testing_thread = None
+            self.addStatus("Site map testing completed")
             self.stopTesting()
 
     def _isInScope(self, request_response, scope_pattern):
@@ -1536,6 +1542,7 @@ class AuthTestMenuHandler(ActionListener):
         if selected_messages and len(selected_messages) > 0:
             def test_selected():
                 try:
+                    self.extender.stop_testing = False
                     for request_response in selected_messages:
                         if self.extender.stop_testing:
                             break
