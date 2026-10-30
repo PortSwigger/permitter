@@ -191,6 +191,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         overflow = len(self.test_results) - cap
         if overflow > 0:
             del self.test_results[:overflow]
+            self._results_evicted = True
 
     def createGUI(self):
         self.panel = JPanel(BorderLayout())
@@ -346,6 +347,10 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         self.save_role_button = JButton("Save")
         self.save_role_button.addActionListener(self)
         pattern_button_panel.add(self.save_role_button)
+        self.preset_combo = JComboBox(["Presets", "Cookie", "Authorization: Bearer", "Authorization: Basic", "X-API-Key", "X-CSRF-Token"])
+        self.preset_combo.addActionListener(self)
+        pattern_button_panel.add(self.preset_combo)
+        patterns_panel.add(pattern_button_panel, BorderLayout.SOUTH)
         patterns_panel.add(pattern_button_panel, BorderLayout.SOUTH)
         right_config.add(patterns_panel, BorderLayout.CENTER)
         config_split.setRightComponent(right_config)
@@ -516,6 +521,27 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
             self.role_combo.addItem(role_name)
         self.role_combo.setSelectedItem(role_name)
 
+    def applyPreset(self):
+        selected = str(self.preset_combo.getSelectedItem())
+        presets = {
+            "Cookie": ("^Cookie:[^\\r\\n]*", "Cookie: CHANGE_ME_TO_VALUE_YOU_WANT"),
+            "Authorization: Bearer": ("^Authorization:\\s*Bearer\\s+[^\\r\\n]*", "Authorization: Bearer CHANGE_ME_TO_VALUE_YOU_WANT"),
+            "Authorization: Basic": ("^Authorization:\\s*Basic\\s+[^\\r\\n]*", "Authorization: Basic CHANGE_ME_TO_VALUE_YOU_WANT"),
+            "X-API-Key": ("^X-API-Key:[^\\r\\n]*", "X-API-Key: CHANGE_ME_TO_VALUE_YOU_WANT"),
+            "X-CSRF-Token": ("^X-CSRF-Token:[^\\r\\n]*", "X-CSRF-Token: CHANGE_ME_TO_VALUE_YOU_WANT"),
+        }
+        if selected in presets:
+            find_val, replace_val = presets[selected]
+            if not self.role_pattern_panels:
+                self.createPatternPair(0)
+            last_panel = self.role_pattern_panels[-1]
+            if last_panel['find_field'].getText().strip():
+                self.createPatternPair(len(self.role_pattern_panels))
+                last_panel = self.role_pattern_panels[-1]
+            last_panel['find_field'].setText(find_val)
+            last_panel['replace_field'].setText(replace_val)
+        self.preset_combo.setSelectedIndex(0)
+
     def refreshTargets(self):
         if getattr(self, "_refreshing_targets", False):
             return 
@@ -600,6 +626,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
             self.createPatternPair(len(self.role_pattern_panels))
         elif source == self.save_role_button:
             self.saveRoleDetails()
+        elif source == self.preset_combo:
+            self.applyPreset()
         elif source == self.test_history_button:
             self.testProxyHistory()
         elif source == self.test_target_button:
@@ -1012,21 +1040,27 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
     def testProxyHistory(self):
         with self.roles_lock:
             has_roles = bool(self.roles)
-        if not has_roles:
+        if not has_roles and not self.test_unauth_checkbox.isSelected():
             return
         self.startTesting("Proxy History")
 
     def testSiteMap(self):
         with self.roles_lock:
             has_roles = bool(self.roles)
-        if not has_roles:
-            return
+        if not has_roles and not self.test_unauth_checkbox.isSelected():
+          return
         self.startTesting("Site Map")
 
     def startTesting(self, test_type):
         if self.current_testing_thread and self.current_testing_thread.isAlive():
-            self.addStatus("Testing already in progress")
-            return
+            if self.stop_testing:
+                self.current_testing_thread.join(10)
+                if self.current_testing_thread.isAlive():
+                    self.addStatus("Previous test still finishing, please wait")
+                    return
+            else:
+                self.addStatus("Testing already in progress")
+                return
         self.stop_testing = False
         try:
             self._cap_value = int(self.max_results_spinner.getValue())
@@ -1050,9 +1084,14 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
 
     def stopTesting(self):
         self.stop_testing = True
-        self.test_history_button.setEnabled(True)
-        self.test_target_button.setEnabled(True)
         self.stop_test_button.setEnabled(False)
+
+    def _enableTestButtons(self):
+        def _apply():
+            self.test_history_button.setEnabled(True)
+            self.test_target_button.setEnabled(True)
+            self.stop_test_button.setEnabled(False)
+        SwingUtilities.invokeLater(_apply)
 
     def _testProxyHistoryBackground(self):
         try:
@@ -1071,7 +1110,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         finally:
             self.current_testing_thread = None
             self.addStatus("Proxy history testing completed")
-            self.stopTesting()
+            self._enableTestButtons()
 
     def _testSiteMapBackground(self):
         try:
@@ -1090,7 +1129,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         finally:
             self.current_testing_thread = None
             self.addStatus("Site map testing completed")
-            self.stopTesting()
+            self._enableTestButtons()
 
     def _isInScope(self, request_response, scope_pattern):
         if not scope_pattern:
@@ -1309,32 +1348,19 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
 
     def _removeAuthPatterns(self, original_request):
         try:
-            request_str = self.helpers.bytesToString(original_request)
-            lines = request_str.split('\n')
-            auth_headers = ['authorization', 'cookie', 'x-api-key', 'x-auth-token', 
+            request_info = self.helpers.analyzeRequest(original_request)
+            body_offset = request_info.getBodyOffset()
+            body = original_request[body_offset:]
+            headers = list(request_info.getHeaders())
+            auth_headers = ['authorization', 'cookie', 'x-api-key', 'x-auth-token',
                         'x-access-token', 'x-csrf-token', 'x-xsrf-token']
-            cleaned_lines = []
-            in_headers = True
-            for line in lines:
-                if in_headers and line.strip() == '':
-                    in_headers = False
-                    cleaned_lines.append(line)
-                    continue
-                if in_headers:
-                    should_remove = False
-                    line_lower = line.lower().strip()
-                    for header in auth_headers:
-                        if line_lower.startswith(header + ':'):
-                            should_remove = True
-                            break
-                    if not should_remove:
-                        cleaned_lines.append(line)
-                else:
-                    cleaned_lines.append(line)
-            modified_request_str = '\n'.join(cleaned_lines)            
-            modified_request_str = re.sub(r'Bearer\s+[A-Za-z0-9\-._~+/]+=*', '', modified_request_str, flags=re.IGNORECASE)
-            modified_request_str = re.sub(r'Basic\s+[A-Za-z0-9+/]+=*', '', modified_request_str, flags=re.IGNORECASE)
-            return self.helpers.stringToBytes(modified_request_str)
+            cleaned_headers = [headers[0]]
+            for header in headers[1:]:
+                header_lower = header.lower().strip()
+                if not any(header_lower.startswith(ah + ':') for ah in auth_headers):
+                    cleaned_headers.append(header)
+            cleaned_headers = [h for h in cleaned_headers if not h.lower().startswith('content-length:')]
+            return self.helpers.buildHttpMessage(cleaned_headers, body)
         except Exception as e:
             self._logError("Error removing auth patterns: %s" % str(e))
             return original_request
@@ -1344,19 +1370,23 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
     
     def _applyRoleToRequest(self, original_request, role_data):
         try:
-            request_str = self.helpers.bytesToString(original_request)
-            modified_request_str = request_str
+            request_info = self.helpers.analyzeRequest(original_request)
+            body_offset = request_info.getBodyOffset()
+            body = original_request[body_offset:]
+            header_str = self.helpers.bytesToString(original_request[:body_offset])
             for pattern in role_data.get("regex_pairs", []):
                 if not pattern.get("enabled", True):
                     continue
                 find_pattern = pattern["find"]
                 replacement = pattern["replace"]
                 try:
-                    modified_request_str = re.sub(find_pattern, replacement, modified_request_str, flags=re.IGNORECASE | re.MULTILINE)
+                    header_str = re.sub(find_pattern, replacement, header_str, flags=re.IGNORECASE | re.MULTILINE)
                 except Exception as e:
                     self._logError("Regex error in pattern '%s': %s" % (find_pattern, str(e)))
                     continue
-            return self.helpers.stringToBytes(modified_request_str)
+            header_lines = [h for h in header_str.strip().replace('\r\n', '\n').split('\n') if h]
+            header_lines = [h for h in header_lines if not h.lower().startswith('content-length:')]
+            return self.helpers.buildHttpMessage(header_lines, body)
         except Exception as e:
             self._logError("Error applying role patterns: %s" % str(e))
             return None
@@ -1386,6 +1416,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         return " | ".join(notes)
     
     def _updateResultsTable(self):
+        evicted = getattr(self, '_results_evicted', False)
+        self._results_evicted = False
         rows = [
             [
                 result["role"],
@@ -1398,18 +1430,17 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
             for result in self.test_results
         ]
 
-        def _apply(rows=rows):
+        def _apply(rows=rows, evicted=evicted):
             model = self.results_table_model
             current = model.getRowCount()
             target = len(rows)
-            if target >= current:
-                for i in range(current, target):
-                    model.addRow(rows[i])
-            else:
-                while model.getRowCount() > 0:
-                    model.removeRow(0)
+            if evicted or target < current:
+                model.setRowCount(0)
                 for row in rows:
                     model.addRow(row)
+            else:
+                for i in range(current, target):
+                    model.addRow(rows[i])
         SwingUtilities.invokeLater(_apply)
 
     def showRequestResponse(self, result):
