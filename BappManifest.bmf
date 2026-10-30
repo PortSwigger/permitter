@@ -3,7 +3,7 @@ ExtensionType: 2
 Name: Permitter
 RepoName: permitter
 ScreenVersion: 1.0.0
-SerialVersion: 3
+SerialVersion: 4
 MinPlatformVersion: 2
 ProOnly: False
 Author: roidrage52
