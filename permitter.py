@@ -1181,7 +1181,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
             method = request_info.getMethod()
             url_key = "%s %s" % (method, url)
             dedup = not self.use_entire_history_checkbox.isSelected()
-            if dedup:
+            if dedup and test_type != "Manual Test":
                 with self.test_lock:
                     if url_key in self.tested_urls:
                         return False
@@ -1459,8 +1459,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                 self.request_editor.setMessage(req_bytes, True)
                 self.response_editor.setMessage(resp_bytes, False)
             else:
-                self.request_editor.setMessage(None, True)
-                self.response_editor.setMessage(None, False)
+                self.request_editor.setMessage(self.helpers.stringToBytes(""), True)
+                self.response_editor.setMessage(self.helpers.stringToBytes(""), False)
         except Exception as e:
             self._logError("Error displaying request/response: %s" % str(e))
 
@@ -1472,8 +1472,8 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
         self.current_request_response = None
 
         def _clear_editors():
-            self.request_editor.setMessage(None, True)
-            self.response_editor.setMessage(None, False)
+            self.request_editor.setMessage(self.helpers.stringToBytes(""), True)
+            self.response_editor.setMessage(self.helpers.stringToBytes(""), False)
         SwingUtilities.invokeLater(_clear_editors)
 
     def addStatus(self, message):
@@ -1487,6 +1487,7 @@ JSYTJzaX2Ds2ClCwTyz5P4Gjx6CoKwBIdsEspog=
                 lines = lines[:25]
             new_text = new_message + '\n' + '\n'.join(lines)
             self.status_area.setText(new_text)
+            self.status_area.setCaretPosition(0)
         SwingUtilities.invokeLater(_apply)
 
     def _logError(self, message):
